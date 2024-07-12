@@ -1,12 +1,12 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use xml::attribute::OwnedAttribute;
+use quick_xml::events::attributes::Attribute;
 
 use crate::{
+    parse::xml::{Parser, ReadFrom, Reader},
     parse_properties,
-    util::{get_attrs, map_wrapper, parse_tag, XmlEventResult},
-    Color, Error, MapTilesetGid, Object, ObjectData, Properties, ResourceCache, ResourceReader,
-    Result, Tileset,
+    util::{get_attrs, map_wrapper, parse_tag},
+    Color, Error, MapTilesetGid, Object, ObjectData, Properties, ResourceCache, Result, Tileset,
 };
 
 /// Raw data referring to a map object layer or tile collision data.
@@ -20,14 +20,14 @@ pub struct ObjectLayerData {
 impl ObjectLayerData {
     /// If it is known that there are no objects with tile images in it (i.e. collision data)
     /// then we can pass in [`None`] as the tilesets
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: Vec<Attribute<'_>>,
         tilesets: Option<&[MapTilesetGid]>,
         for_tileset: Option<Arc<Tileset>>,
         // path_relative_to is a directory to which all other files are relative to
         path_relative_to: &Path,
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<(ObjectLayerData, Properties)> {
         let c = get_attrs!(
@@ -38,13 +38,22 @@ impl ObjectLayerData {
         );
         let mut objects = Vec::new();
         let mut properties = HashMap::new();
-        parse_tag!(parser, "objectgroup", {
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "objectgroup", {
             "object" => |attrs| {
-                objects.push(ObjectData::new(parser, attrs, tilesets, for_tileset.as_ref().cloned(), path_relative_to, reader, cache)?);
+                objects.push(ObjectData::new(
+                    parser,
+                    attrs,
+                    tilesets,
+                    for_tileset.as_ref().cloned(),
+                    path_relative_to,
+                    read_from,
+                    cache
+                ).await?);
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
         });

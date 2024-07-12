@@ -1,15 +1,16 @@
 use std::{collections::HashMap, path::Path};
 
-use xml::attribute::OwnedAttribute;
+use quick_xml::events::attributes::Attribute;
 
 use crate::{
     animation::{parse_animation, Frame},
     error::Error,
     image::Image,
     layers::ObjectLayerData,
+    parse::xml::{Parser, ReadFrom, Reader},
     properties::{parse_properties, Properties},
-    util::{get_attrs, parse_tag, XmlEventResult},
-    ResourceCache, ResourceReader, Result, Tileset,
+    util::{get_attrs, parse_tag},
+    ResourceCache, Result, Tileset,
 };
 
 /// A tile ID, local to a tileset.
@@ -60,11 +61,11 @@ impl<'tileset> std::ops::Deref for Tile<'tileset> {
 }
 
 impl TileData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: Vec<Attribute<'_>>,
         path_relative_to: &Path,
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<(TileId, TileData)> {
         let ((user_type, user_class, probability), id) = get_attrs!(
@@ -81,23 +82,28 @@ impl TileData {
         let mut properties = HashMap::new();
         let mut objectgroup = None;
         let mut animation = None;
-        parse_tag!(parser, "tile", {
+
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "tile", {
             "image" => |attrs| {
-                image = Some(Image::new(parser, attrs, path_relative_to)?);
+                image = Some(Image::new(parser, attrs, path_relative_to).await?);
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
             "objectgroup" => |attrs| {
                 // Tile objects are not allowed within tile object groups, so we can pass None as the
                 // tilesets vector
-                objectgroup = Some(ObjectLayerData::new(parser, attrs, None, None, path_relative_to, reader, cache)?.0);
+                objectgroup = Some(
+                    ObjectLayerData::new(parser, attrs, None, None, path_relative_to, read_from, cache)
+                        .await?.0
+                );
                 Ok(())
             },
             "animation" => |_| {
-                animation = Some(parse_animation(parser)?);
+                animation = Some(parse_animation(parser).await?);
                 Ok(())
             },
         });

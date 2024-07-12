@@ -1,13 +1,14 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use xml::attribute::OwnedAttribute;
+use quick_xml::events::{attributes::Attribute, Event};
 
 use crate::{
     error::{Error, Result},
+    parse::xml::{Parser, ReadFrom, Reader},
     properties::{parse_properties, Properties},
     template::Template,
-    util::{get_attrs, map_wrapper, parse_tag, XmlEventResult},
-    Color, Gid, MapTilesetGid, ResourceCache, ResourceReader, Tile, TileId, Tileset,
+    util::{get_attrs, map_wrapper, parse_tag},
+    Color, Gid, MapTilesetGid, ResourceCache, Tile, TileId, Tileset,
 };
 
 /// The location of the tileset this tile is in
@@ -219,14 +220,14 @@ impl ObjectData {
 impl ObjectData {
     /// If it is known that the object has no tile images in it (i.e. collision data)
     /// then we can pass in [`None`] as the tilesets
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: Vec<Attribute<'_>>,
         tilesets: Option<&[MapTilesetGid]>,
         for_tileset: Option<Arc<Tileset>>,
         // Base path is a directory to which all other files are relative to
         base_path: &Path,
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<ObjectData> {
         let (id, tile, mut n, mut t, c, w, h, mut v, mut r, template, x, y) = get_attrs!(
@@ -240,7 +241,7 @@ impl ObjectData {
                 Some("height") => height ?= v.parse(),
                 Some("visible") => visible ?= v.parse().map(|x:i32| x == 1),
                 Some("rotation") => rotation ?= v.parse(),
-                Some("template") => template ?= v.parse(),
+                Some("template") => template = v.to_string(),
                 Some("x") => x ?= v.parse::<f32>(),
                 Some("y") => y ?= v.parse::<f32>(),
             }
@@ -252,15 +253,17 @@ impl ObjectData {
             ObjectTileData::from_bits(bits, tilesets?, for_tileset.as_ref().cloned())
         });
         // If the template attribute is there, we need to go fetch the template file
-        let template = template
-            .map(|template_path: String| {
+        // FIXME: refactor (remove transpose?)
+        let template: Option<Arc<Template>> = match template {
+            Some(template_path) => {
                 let template_path = base_path.join(Path::new(&template_path));
 
                 // Check the cache to see if this template exists
                 let template = if let Some(templ) = cache.get_template(&template_path) {
                     templ
                 } else {
-                    let template = Template::parse_template(&template_path, reader, cache)?;
+                    let template =
+                        Template::parse_template(&template_path, read_from, cache).await?;
                     // Insert it into the cache
                     cache.insert_template(&template_path, template.clone());
                     template
@@ -275,9 +278,11 @@ impl ObjectData {
                 if let Some(templ_tile) = &obj.tile {
                     tile.get_or_insert_with(|| templ_tile.clone());
                 }
-                Ok(template)
-            })
-            .transpose()?;
+                Some(Ok(template))
+            }
+            None => None,
+        }
+        .transpose()?;
 
         let visible = v.unwrap_or(true);
         let width = w.unwrap_or(0f32);
@@ -289,7 +294,8 @@ impl ObjectData {
         let mut shape = None;
         let mut properties = HashMap::new();
 
-        parse_tag!(parser, "object", {
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "object", {
             "ellipse" => |_| {
                 shape = Some(ObjectShape::Ellipse {
                     width,
@@ -310,11 +316,11 @@ impl ObjectData {
                 Ok(())
             },
             "text" => |attrs| {
-                shape = Some(ObjectData::new_text(attrs, parser, width, height)?);
+                shape = Some(ObjectData::new_text(attrs, parser, width, height).await?);
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
         });
@@ -349,29 +355,29 @@ impl ObjectData {
 }
 
 impl ObjectData {
-    fn new_polyline(attrs: Vec<OwnedAttribute>) -> Result<ObjectShape> {
+    fn new_polyline(attrs: Vec<Attribute>) -> Result<ObjectShape> {
         let points = get_attrs!(
             for v in attrs {
-                "points" => points ?= ObjectData::parse_points(v),
+                "points" => points ?= ObjectData::parse_points(v.to_string()),
             }
             points
         );
         Ok(ObjectShape::Polyline { points })
     }
 
-    fn new_polygon(attrs: Vec<OwnedAttribute>) -> Result<ObjectShape> {
+    fn new_polygon(attrs: Vec<Attribute>) -> Result<ObjectShape> {
         let points = get_attrs!(
             for v in attrs {
-                "points" => points ?= ObjectData::parse_points(v),
+                "points" => points ?= ObjectData::parse_points(v.to_string()),
             }
             points
         );
         Ok(ObjectShape::Polygon { points })
     }
 
-    fn new_text(
-        attrs: Vec<OwnedAttribute>,
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    async fn new_text<R: Reader>(
+        attrs: Vec<Attribute<'_>>,
+        parser: &mut Parser<R>,
         width: f32,
         height: f32,
     ) -> Result<ObjectShape> {
@@ -398,14 +404,14 @@ impl ObjectData {
                 Some("underline") => underline ?= v.parse(),
                 Some("strikeout") => strikeout ?= v.parse(),
                 Some("kerning") => kerning ?= v.parse::<i32>(),
-                Some("halign") => halign = match v.as_str() {
+                Some("halign") => halign = match v {
                     "left" => HorizontalAlignment::Left,
                     "center" => HorizontalAlignment::Center,
                     "right" => HorizontalAlignment::Right,
                     "justify" => HorizontalAlignment::Justify,
                     _ => return Err(Error::MalformedAttributes("`halign` property did not contain a valid value of 'left', 'center', 'right' or 'justify'".to_string()))
                 },
-                Some("valign") => valign = match v.as_str() {
+                Some("valign") => valign = match v {
                     "top" => VerticalAlignment::Top,
                     "center" => VerticalAlignment::Center,
                     "bottom" => VerticalAlignment::Bottom,
@@ -429,7 +435,7 @@ impl ObjectData {
                 valign,
             )
         );
-        let font_family = font_family.unwrap_or_else(|| "sans-serif".to_string());
+        let font_family = font_family.unwrap_or("sans-serif").to_string();
         let pixel_size = pixel_size.unwrap_or(16);
         let color = color.unwrap_or(Color {
             red: 0,
@@ -445,15 +451,16 @@ impl ObjectData {
         let kerning = kerning.map_or(true, |k| k == 1);
         let halign = halign.unwrap_or_default();
         let valign = valign.unwrap_or_default();
-        let contents = match parser.next().map_or_else(
-            || {
-                Err(Error::PrematureEnd(
+        let contents = match parser.read_event().await.map_err(Error::XmlDecodingError)? {
+            Event::Eof => {
+                return Err(Error::PrematureEnd(
                     "XML stream ended when trying to parse text contents".to_owned(),
                 ))
-            },
-            |r| r.map_err(Error::XmlDecodingError),
-        )? {
-            xml::reader::XmlEvent::Characters(contents) => contents,
+            }
+            // FIXME: whitespace?
+            Event::Text(contents) => std::str::from_utf8(&contents)
+                .map_err(|err| Error::XmlDecodingError(err.into()))?
+                .to_string(),
             _ => {
                 return Err(Error::InvalidObjectData {
                     description: "Text attribute contained anything but characters as content"

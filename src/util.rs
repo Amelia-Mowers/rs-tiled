@@ -79,7 +79,9 @@ macro_rules! get_attrs {
             $crate::util::let_attr_branches!($($branches)*);
 
             for attr in $attrs.iter() {
-                let $attr = attr.value.clone();
+                let $attr = std::str::from_utf8(&attr.value).map_err(|err| {
+                    $crate::error::Error::XmlDecodingError(quick_xml::Error::NonDecodable(Some(err)))
+                })?;
                 $crate::util::process_attr_branches!(attr; $($branches)*);
             }
 
@@ -110,7 +112,7 @@ macro_rules! process_attr_branches {
     ($attr:ident; ) => {};
 
     ($attr:ident; Some($attr_pat_opt:literal) => $opt_var:ident = $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().into_inner() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr);
         }
         else {
@@ -119,7 +121,7 @@ macro_rules! process_attr_branches {
     };
 
     ($attr:ident; Some($attr_pat_opt:literal) => $opt_var:ident ?= $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().into_inner() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr.map_err(|_|
                 $crate::Error::MalformedAttributes(
                     concat!("Error parsing optional attribute '", $attr_pat_opt, "'").to_owned()
@@ -132,7 +134,7 @@ macro_rules! process_attr_branches {
     };
 
     ($attr:ident; $attr_pat_opt:literal => $opt_var:ident = $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().into_inner() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr);
         }
         else {
@@ -141,7 +143,7 @@ macro_rules! process_attr_branches {
     };
 
     ($attr:ident; $attr_pat_opt:literal => $opt_var:ident ?= $opt_expr:expr $(, $($tail:tt)*)?) => {
-        if(&$attr.name.local_name == $attr_pat_opt) {
+        if($attr.key.local_name().into_inner() == $attr_pat_opt.as_bytes()) {
             $opt_var = Some($opt_expr.map_err(|_|
                 $crate::Error::MalformedAttributes(
                     concat!("Error parsing attribute '", $attr_pat_opt, "'").to_owned()
@@ -180,23 +182,59 @@ pub(crate) use handle_attr_branches;
 /// Goes through the children of the tag and will call the correct function for
 /// that child. Closes the tag.
 macro_rules! parse_tag {
-    ($parser:expr, $close_tag:expr, {$($open_tag:expr => $open_method:expr),* $(,)*}) => {
-        while let Some(next) = $parser.next() {
-            match next.map_err(Error::XmlDecodingError)? {
+    ($parser:expr, $close_tag:expr, {$($open_tag:expr => |$attrs:tt| $block:expr),* $(,)*}) => {
+        loop {
+            let next: quick_xml::events::Event = $parser.read_event().await.map_err(Error::XmlDecodingError)?;
+            match next {
                 #[allow(unused_variables)]
                 $(
-                    xml::reader::XmlEvent::StartElement {name, attributes, ..}
-                        if name.local_name == $open_tag => $open_method(attributes)?,
+                    quick_xml::events::Event::Start(start) if start.local_name().into_inner() == $open_tag.as_bytes() => {
+                        use itertools::Itertools;
+                        let $attrs: std::vec::Vec<_> = start
+                            .attributes()
+                            .try_collect()
+                            .map_err(|err| $crate::Error::XmlDecodingError(err.into()))?;
+                        $block?
+                    }
                 )*
 
-
-                xml::reader::XmlEvent::EndElement {name, ..} => if name.local_name == $close_tag {
+                quick_xml::events::Event::End(end) if end.local_name().into_inner() == $close_tag.as_bytes() => {
                     break;
                 }
 
-                xml::reader::XmlEvent::EndDocument => {
+                quick_xml::events::Event::Eof => {
                     return Err(Error::PrematureEnd("Document ended before we expected.".to_string()));
                 }
+
+                _ => {}
+            }
+        }
+    };
+
+    ($parser:expr => $buf:expr, $close_tag:expr, {$($open_tag:expr => |$attrs:tt| $block:expr),* $(,)*}) => {
+        loop {
+            let next: quick_xml::events::Event = $parser.reader.read_event_into($buf).await.map_err(Error::XmlDecodingError)?;
+            match next {
+                #[allow(unused_variables)]
+                $(
+                    quick_xml::events::Event::Start(start) if start.local_name().into_inner() == $open_tag.as_bytes() => {
+                        use itertools::Itertools;
+                        let $attrs: std::vec::Vec<_> = start
+                            .attributes()
+                            .try_collect()
+                            .map_err(|err| $crate::Error::XmlDecodingError(err.into()))?;
+                        $block?
+                    }
+                )*
+
+                quick_xml::events::Event::End(end) if end.local_name().into_inner() == $close_tag.as_bytes() => {
+                    break;
+                }
+
+                quick_xml::events::Event::Eof => {
+                    return Err(Error::PrematureEnd("Document ended before we expected.".to_string()));
+                }
+
                 _ => {}
             }
         }
@@ -242,8 +280,6 @@ pub(crate) use map_wrapper;
 pub(crate) use parse_tag;
 
 use crate::{Gid, MapTilesetGid};
-
-pub(crate) type XmlEventResult = xml::reader::Result<xml::reader::XmlEvent>;
 
 /// Returns both the tileset and its index
 pub(crate) fn get_tileset_for_gid(

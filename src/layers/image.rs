@@ -1,8 +1,9 @@
 use std::{collections::HashMap, path::Path};
 
 use crate::{
+    parse::xml::{Parser, Reader},
     parse_properties,
-    util::{map_wrapper, parse_tag, XmlEventResult},
+    util::{map_wrapper, parse_tag},
     Error, Image, Properties, Result,
 };
 
@@ -14,8 +15,8 @@ pub struct ImageLayerData {
 }
 
 impl ImageLayerData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
         map_path: &Path,
     ) -> Result<(Self, Properties)> {
         let mut image: Option<Image> = None;
@@ -23,13 +24,14 @@ impl ImageLayerData {
 
         let path_relative_to = map_path.parent().ok_or(Error::PathIsNotFile)?;
 
-        parse_tag!(parser, "imagelayer", {
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "imagelayer", {
             "image" => |attrs| {
-                image = Some(Image::new(parser, attrs, path_relative_to)?);
+                image = Some(Image::new(parser, attrs, path_relative_to).await?);
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
         });

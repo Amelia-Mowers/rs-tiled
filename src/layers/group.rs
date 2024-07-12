@@ -3,9 +3,10 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use crate::{
     error::Result,
     layers::{LayerData, LayerTag},
+    parse::xml::{Parser, ReadFrom, Reader},
     properties::{parse_properties, Properties},
     util::*,
-    Error, Layer, MapTilesetGid, ResourceCache, ResourceReader, Tileset,
+    Error, Layer, MapTilesetGid, ResourceCache, Tileset,
 };
 
 /// The raw data of a [`GroupLayer`]. Does not include a reference to its parent [`Map`](crate::Map).
@@ -15,18 +16,19 @@ pub struct GroupLayerData {
 }
 
 impl GroupLayerData {
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
         infinite: bool,
         map_path: &Path,
         tilesets: &[MapTilesetGid],
         for_tileset: Option<Arc<Tileset>>,
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<(Self, Properties)> {
         let mut properties = HashMap::new();
         let mut layers = Vec::new();
-        parse_tag!(parser, "group", {
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "group", {
             "layer" => |attrs| {
                 layers.push(LayerData::new(
                     parser,
@@ -35,9 +37,10 @@ impl GroupLayerData {
                     infinite,
                     map_path,
                     tilesets,
-                    for_tileset.as_ref().cloned(),reader,
+                    for_tileset.as_ref().cloned(),
+                    read_from,
                     cache
-                )?);
+                ).await?);
                 Ok(())
             },
             "imagelayer" => |attrs| {
@@ -48,9 +51,10 @@ impl GroupLayerData {
                     infinite,
                     map_path,
                     tilesets,
-                    for_tileset.as_ref().cloned(),reader,
+                    for_tileset.as_ref().cloned(),
+                    read_from,
                     cache
-                )?);
+                ).await?);
                 Ok(())
             },
             "objectgroup" => |attrs| {
@@ -61,9 +65,10 @@ impl GroupLayerData {
                     infinite,
                     map_path,
                     tilesets,
-                    for_tileset.as_ref().cloned(),reader,
+                    for_tileset.as_ref().cloned(),
+                    read_from,
                     cache
-                )?);
+                ).await?);
                 Ok(())
             },
             "group" => |attrs| {
@@ -74,13 +79,14 @@ impl GroupLayerData {
                     infinite,
                     map_path,
                     tilesets,
-                    for_tileset.as_ref().cloned(),reader,
+                    for_tileset.as_ref().cloned(),
+                    read_from,
                     cache
-                )?);
+                ).await?);
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
         });

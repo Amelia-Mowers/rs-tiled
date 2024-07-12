@@ -1,10 +1,13 @@
 use std::{path::Path, sync::Arc};
 
-use xml::attribute::OwnedAttribute;
+use quick_xml::events::attributes::Attribute;
 
 use crate::{
-    error::Result, properties::Properties, util::*, Color, Map, MapTilesetGid, ResourceCache,
-    ResourceReader, Tileset,
+    error::Result,
+    parse::xml::{Parser, ReadFrom, Reader},
+    properties::Properties,
+    util::*,
+    Color, Map, MapTilesetGid, ResourceCache, Tileset,
 };
 
 mod image;
@@ -67,15 +70,17 @@ impl LayerData {
         self.id
     }
 
-    pub(crate) fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    // FIXME: fewer arguments?
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: Vec<Attribute<'_>>,
         tag: LayerTag,
         infinite: bool,
         map_path: &Path,
         tilesets: &[MapTilesetGid],
         for_tileset: Option<Arc<Tileset>>,
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<Self> {
         let (
@@ -94,7 +99,7 @@ impl LayerData {
             for v in attrs {
                 Some("opacity") => opacity ?= v.parse(),
                 Some("tintcolor") => tint_color ?= v.parse(),
-                Some("visible") => visible ?= v.parse().map(|x:i32| x == 1),
+                Some("visible") => visible ?= v.parse().map(|x: i32| x == 1),
                 Some("offsetx") => offset_x ?= v.parse(),
                 Some("offsety") => offset_y ?= v.parse(),
                 Some("parallaxx") => parallax_x ?= v.parse(),
@@ -106,10 +111,12 @@ impl LayerData {
             }
             (opacity, tint_color, visible, offset_x, offset_y, parallax_x, parallax_y, name, id, user_type, user_class)
         );
+        let name = name.map(ToOwned::to_owned);
 
         let (ty, properties) = match tag {
             LayerTag::Tiles => {
-                let (ty, properties) = TileLayerData::new(parser, attrs, infinite, tilesets)?;
+                let (ty, properties) =
+                    TileLayerData::new(parser, attrs, infinite, tilesets).await?;
                 (LayerDataType::Tiles(ty), properties)
             }
             LayerTag::Objects => {
@@ -119,13 +126,14 @@ impl LayerData {
                     Some(tilesets),
                     for_tileset,
                     map_path.parent().ok_or(crate::Error::PathIsNotFile)?,
-                    reader,
+                    read_from,
                     cache,
-                )?;
+                )
+                .await?;
                 (LayerDataType::Objects(ty), properties)
             }
             LayerTag::Image => {
-                let (ty, properties) = ImageLayerData::new(parser, map_path)?;
+                let (ty, properties) = ImageLayerData::new(parser, map_path).await?;
                 (LayerDataType::Image(ty), properties)
             }
             LayerTag::Group => {
@@ -135,9 +143,10 @@ impl LayerData {
                     map_path,
                     tilesets,
                     for_tileset,
-                    reader,
+                    read_from,
                     cache,
-                )?;
+                )
+                .await?;
                 (LayerDataType::Group(ty), properties)
             }
         };
@@ -150,7 +159,7 @@ impl LayerData {
             parallax_y: parallax_y.unwrap_or(1.0),
             opacity: opacity.unwrap_or(1.0),
             tint_color,
-            name: name.unwrap_or_default(),
+            name: name.unwrap_or_default().to_string(),
             id: id.unwrap_or(0),
             user_type: user_type.or(user_class),
             properties,

@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use xml::attribute::OwnedAttribute;
+use quick_xml::events::attributes::Attribute;
 
 use crate::error::{Error, Result};
 use crate::image::Image;
+use crate::parse::xml::{Parser, ReadFrom, Reader};
 use crate::properties::{parse_properties, Properties};
 use crate::tile::TileData;
-use crate::{util::*, Gid, InvalidTilesetError, ResourceCache, ResourceReader, Tile, TileId};
+use crate::{util::*, Gid, InvalidTilesetError, ResourceCache, Tile, TileId};
 
 mod wangset;
 pub use wangset::*;
@@ -69,6 +70,8 @@ pub struct Tileset {
     pub user_type: Option<String>,
 }
 
+// FIXME: large enum variant?
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum EmbeddedParseResultType {
     ExternalReference { tileset_path: PathBuf },
     Embedded { tileset: Tileset },
@@ -110,27 +113,29 @@ impl Tileset {
 }
 
 impl Tileset {
-    pub(crate) fn parse_xml_in_map(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: &[OwnedAttribute],
+    pub(crate) async fn parse_xml_in_map<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: &[Attribute<'_>],
         path: &Path, // Template or Map file
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<EmbeddedParseResult> {
-        Tileset::parse_xml_embedded(parser, attrs, path, reader, cache).or_else(|err| {
-            if matches!(err, Error::MalformedAttributes(_)) {
-                Tileset::parse_xml_reference(attrs, path)
-            } else {
-                Err(err)
-            }
-        })
+        Tileset::parse_xml_embedded(parser, attrs, path, read_from, cache)
+            .await
+            .or_else(|err| {
+                if matches!(err, Error::MalformedAttributes(_)) {
+                    Tileset::parse_xml_reference(attrs, path)
+                } else {
+                    Err(err)
+                }
+            })
     }
 
-    fn parse_xml_embedded(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: &[OwnedAttribute],
+    async fn parse_xml_embedded<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: &[Attribute<'_>],
         path: &Path, // Template or Map file
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<EmbeddedParseResult> {
         let (
@@ -160,7 +165,7 @@ impl Tileset {
             TilesetProperties {
                 spacing,
                 margin,
-                name: name.unwrap_or_default(),
+                name: name.unwrap_or_default().to_string(),
                 user_type: user_type.or(user_class),
                 root_path,
                 columns,
@@ -168,19 +173,17 @@ impl Tileset {
                 tile_height,
                 tile_width,
             },
-            reader,
+            read_from,
             cache,
         )
+        .await
         .map(|tileset| EmbeddedParseResult {
             first_gid,
             result_type: EmbeddedParseResultType::Embedded { tileset },
         })
     }
 
-    fn parse_xml_reference(
-        attrs: &[OwnedAttribute],
-        map_path: &Path,
-    ) -> Result<EmbeddedParseResult> {
+    fn parse_xml_reference(attrs: &[Attribute], map_path: &Path) -> Result<EmbeddedParseResult> {
         let (first_gid, source) = get_attrs!(
             for v in attrs {
                 "firstgid" => first_gid ?= v.parse::<u32>().map(Gid),
@@ -197,11 +200,11 @@ impl Tileset {
         })
     }
 
-    pub(crate) fn parse_external_tileset(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: &[OwnedAttribute],
+    pub(crate) async fn parse_external_tileset<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: &[Attribute<'_>],
         path: &Path,
-        reader: &mut impl ResourceReader,
+        reader: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<Tileset> {
         let (
@@ -230,7 +233,7 @@ impl Tileset {
             TilesetProperties {
                 spacing,
                 margin,
-                name: name.unwrap_or_default(),
+                name: name.unwrap_or_default().to_string(),
                 user_type: user_type.or(user_class),
                 root_path,
                 columns,
@@ -241,12 +244,13 @@ impl Tileset {
             reader,
             cache,
         )
+        .await
     }
 
-    fn finish_parsing_xml(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
+    async fn finish_parsing_xml<R: Reader>(
+        parser: &mut Parser<R>,
         prop: TilesetProperties,
-        reader: &mut impl ResourceReader,
+        read_from: &mut impl ReadFrom,
         cache: &mut impl ResourceCache,
     ) -> Result<Tileset> {
         let mut image = Option::None;
@@ -255,9 +259,10 @@ impl Tileset {
         let mut wang_sets = Vec::new();
         let mut offset = (0i32, 0i32);
 
-        parse_tag!(parser, "tileset", {
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "tileset", {
             "image" => |attrs| {
-                image = Some(Image::new(parser, attrs, &prop.root_path)?);
+                image = Some(Image::new(parser, attrs, &prop.root_path).await?);
                 Ok(())
             },
             "tileoffset" => |attrs| {
@@ -265,16 +270,16 @@ impl Tileset {
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
             "tile" => |attrs| {
-                let (id, tile) = TileData::new(parser, attrs, &prop.root_path, reader, cache)?;
+                let (id, tile) = TileData::new(parser, attrs, &prop.root_path, read_from, cache).await?;
                 tiles.insert(id, tile);
                 Ok(())
             },
             "wangset" => |attrs| {
-                let set = WangSet::new(parser, attrs)?;
+                let set = WangSet::new(parser, attrs).await?;
                 wang_sets.push(set);
                 Ok(())
             },
@@ -338,7 +343,7 @@ impl Tileset {
 }
 
 /// Parse the optional <tileoffset x=... y=.../> tag.
-fn parse_tileoffset(attrs: Vec<OwnedAttribute>) -> Result<(i32, i32)> {
+fn parse_tileoffset(attrs: Vec<Attribute>) -> Result<(i32, i32)> {
     Ok(get_attrs!(
         for v in attrs {
             "x" => offset_x ?= v.parse::<i32>(),

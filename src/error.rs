@@ -56,7 +56,7 @@ pub enum Error {
     /// An error occurred when decoding a csv encoded dataset.
     CsvDecodingError(CsvDecodingError),
     /// An error occurred when parsing an XML file, such as a TMX or TSX file.
-    XmlDecodingError(xml::reader::Error),
+    XmlDecodingError(quick_xml::Error),
     /// The XML stream ended before the document was fully parsed.
     PrematureEnd(String),
     /// The path given is invalid because it isn't contained in any folder.

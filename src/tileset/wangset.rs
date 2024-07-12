@@ -1,32 +1,27 @@
 use std::collections::HashMap;
 
-use xml::attribute::OwnedAttribute;
-
 use crate::{
     error::Error,
+    parse::xml::{Parser, Reader},
     properties::{parse_properties, Properties},
-    util::{get_attrs, parse_tag, XmlEventResult},
+    util::{get_attrs, parse_tag},
     Result, TileId,
 };
 
 mod wang_color;
+use quick_xml::events::attributes::Attribute;
 pub use wang_color::*;
 mod wang_tile;
 pub use wang_tile::*;
 
 /// Wang set's terrain brush connection type.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 #[allow(missing_docs)]
 pub enum WangSetType {
     Corner,
     Edge,
+    #[default]
     Mixed,
-}
-
-impl Default for WangSetType {
-    fn default() -> Self {
-        WangSetType::Mixed
-    }
 }
 
 /// Raw data belonging to a WangSet.
@@ -48,9 +43,10 @@ pub struct WangSet {
 
 impl WangSet {
     /// Reads data from XML parser to create a WangSet.
-    pub fn new(
-        parser: &mut impl Iterator<Item = XmlEventResult>,
-        attrs: Vec<OwnedAttribute>,
+    // FIXME: was public before
+    pub(crate) async fn new<R: Reader>(
+        parser: &mut Parser<R>,
+        attrs: Vec<Attribute<'_>>,
     ) -> Result<WangSet> {
         // Get common data
         let (name, wang_set_type, tile) = get_attrs!(
@@ -73,19 +69,21 @@ impl WangSet {
         let mut wang_colors = Vec::new();
         let mut wang_tiles = HashMap::new();
         let mut properties = HashMap::new();
-        parse_tag!(parser, "wangset", {
+
+        let mut buffer = Vec::new();
+        parse_tag!(parser => &mut buffer, "wangset", {
             "wangcolor" => |attrs| {
-                let color = WangColor::new(parser, attrs)?;
+                let color = WangColor::new(parser, attrs).await?;
                 wang_colors.push(color);
                 Ok(())
             },
             "wangtile" => |attrs| {
-                let (id, t) = WangTile::new(parser, attrs)?;
+                let (id, t) = WangTile::new(attrs)?;
                 wang_tiles.insert(id, t);
                 Ok(())
             },
             "properties" => |_| {
-                properties = parse_properties(parser)?;
+                properties = parse_properties(parser).await?;
                 Ok(())
             },
         });

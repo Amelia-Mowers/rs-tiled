@@ -1,5 +1,5 @@
-use std::io::BufReader;
-use std::{fs::File, io::Read, path::Path};
+use std::io::{BufRead, BufReader};
+use std::{fs::File, path::Path};
 
 /// A trait defining types that can load data from a [`ResourcePath`](crate::ResourcePath).
 ///
@@ -28,7 +28,8 @@ use std::{fs::File, io::Read, path::Path};
 pub trait ResourceReader {
     /// The type of the resource that the reader provides. For example, for
     /// [`FilesystemResourceReader`], this is defined as [`File`].
-    type Resource: Read;
+    type Resource: BufRead;
+
     /// The type that is returned if [`read_from()`](Self::read_from()) fails. For example, for
     /// [`FilesystemResourceReader`], this is defined as [`std::io::Error`].
     type Error: std::error::Error + Send + Sync + 'static;
@@ -38,7 +39,7 @@ pub trait ResourceReader {
 }
 
 /// A [`ResourceReader`] that reads from [`File`] handles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FilesystemResourceReader;
 
 impl FilesystemResourceReader {
@@ -61,11 +62,10 @@ impl ResourceReader for FilesystemResourceReader {
 impl<T, R, E> ResourceReader for T
 where
     T: for<'a> Fn(&'a Path) -> Result<R, E>,
-    R: Read,
+    R: BufRead,
     E: std::error::Error + Send + Sync + 'static,
 {
     type Resource = R;
-
     type Error = E;
 
     fn read_from(&mut self, path: &Path) -> std::result::Result<Self::Resource, Self::Error> {
