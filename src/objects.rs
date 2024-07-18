@@ -253,7 +253,6 @@ impl ObjectData {
             ObjectTileData::from_bits(bits, tilesets?, for_tileset.as_ref().cloned())
         });
         // If the template attribute is there, we need to go fetch the template file
-        // FIXME: refactor (remove transpose?)
         let template: Option<Arc<Template>> = match template {
             Some(template_path) => {
                 let template_path = base_path.join(Path::new(&template_path));
@@ -262,8 +261,11 @@ impl ObjectData {
                 let template = if let Some(templ) = cache.get_template(&template_path) {
                     templ
                 } else {
+                    // add indirection because the returned async state machine is a recursive data structure
+                    // (`Template::parse_template` eventually calls this function)
                     let template =
-                        Template::parse_template(&template_path, read_from, cache).await?;
+                        Box::pin(Template::parse_template(&template_path, read_from, cache))
+                            .await?;
                     // Insert it into the cache
                     cache.insert_template(&template_path, template.clone());
                     template
@@ -278,11 +280,10 @@ impl ObjectData {
                 if let Some(templ_tile) = &obj.tile {
                     tile.get_or_insert_with(|| templ_tile.clone());
                 }
-                Some(Ok(template))
+                Some(template)
             }
             None => None,
-        }
-        .transpose()?;
+        };
 
         let visible = v.unwrap_or(true);
         let width = w.unwrap_or(0f32);
@@ -457,7 +458,7 @@ impl ObjectData {
                     "XML stream ended when trying to parse text contents".to_owned(),
                 ))
             }
-            // FIXME: whitespace?
+
             Event::Text(contents) => std::str::from_utf8(&contents)
                 .map_err(|err| Error::XmlDecodingError(err.into()))?
                 .to_string(),

@@ -70,7 +70,7 @@ pub struct Tileset {
     pub user_type: Option<String>,
 }
 
-// FIXME: large enum variant?
+// FIXME: box large enum variant?
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum EmbeddedParseResultType {
     ExternalReference { tileset_path: PathBuf },

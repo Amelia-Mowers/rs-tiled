@@ -45,7 +45,6 @@ async fn parse_base64<R: Reader>(parser: &mut Parser<R>) -> Result<Vec<u8>> {
     loop {
         let next = parser.read_event().await.map_err(Error::XmlDecodingError)?;
         match next {
-            // FIXME: whitespace?
             Event::Text(mut text) => {
                 text.inplace_trim_start();
                 text.inplace_trim_end();
@@ -80,7 +79,6 @@ async fn decode_csv<R: Reader>(
     loop {
         let next = parser.read_event().await.map_err(Error::XmlDecodingError)?;
         match next {
-            // FIXME: whitespace?
             Event::Text(text) => {
                 let text = std::str::from_utf8(&text)
                     .map_err(|err| Error::XmlDecodingError(err.into()))?;

@@ -58,7 +58,9 @@ where
 
     type Error = E;
 
-    // FIXME: remove `allow(refining_impl_trait)` or this comment
+    // FIXME: remove `allow(refining_impl_trait)` or this comment or add #[refine]
+    // this lint is under discussion at https://github.com/rust-lang/rust/issues/121718
+    // eventually, we'd want to #[refine] this function if this attribute becomes available
     #[allow(refining_impl_trait)]
     fn read_from(&mut self, path: &Path) -> F {
         self(path)

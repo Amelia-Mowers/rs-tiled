@@ -143,7 +143,9 @@ pub(crate) async fn parse_properties<R: Reader>(parser: &mut Parser<R>) -> Resul
     let mut buffer = Vec::new();
     parse_tag!(parser => &mut buffer, "properties", {
         "property" => |attrs| {
-            parse_properties_inner(parser, &mut p, attrs).await
+            // add indirection because the returned async state machine is a recursive data structure
+            // (`parse_properties_inner` calls `parse_properties` again)
+            Box::pin(parse_properties_inner(parser, &mut p, attrs)).await
         },
     });
     Ok(p)
@@ -188,7 +190,6 @@ async fn parse_properties_inner<R: Reader>(
         None => {
             // if the "value" attribute was missing, might be a multiline string
             match parser.read_event().await {
-                // FIXME: whitespace?
                 Ok(Event::Text(text)) => {
                     let text = text.into_inner();
                     let text = std::str::from_utf8(&text)

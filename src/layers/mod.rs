@@ -137,7 +137,9 @@ impl LayerData {
                 (LayerDataType::Image(ty), properties)
             }
             LayerTag::Group => {
-                let (ty, properties) = GroupLayerData::new(
+                // add indirection because the returned async state machine is a recursive data structure
+                // (`GroupLayerData::new` eventually calls this function)
+                let (ty, properties) = Box::pin(GroupLayerData::new(
                     parser,
                     infinite,
                     map_path,
@@ -145,7 +147,7 @@ impl LayerData {
                     for_tileset,
                     read_from,
                     cache,
-                )
+                ))
                 .await?;
                 (LayerDataType::Group(ty), properties)
             }

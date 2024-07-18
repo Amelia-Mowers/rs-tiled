@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use futures::FutureExt;
+
 use crate::{
     parse::xml::{AsyncReadFrom, SyncReadFrom},
     AsyncResourceReader, DefaultResourceCache, FilesystemResourceReader, Map, ResourceCache,
@@ -192,9 +194,11 @@ impl<Reader: ResourceReader, Cache: ResourceCache> Loader<Reader, Cache> {
     /// [internal loader cache]: Loader::cache()
     pub fn load_tmx_map(&mut self, path: impl AsRef<Path>) -> Result<Map> {
         let mut read_from = SyncReadFrom(&mut self.reader);
-        let fut = crate::parse::xml::parse_map(path.as_ref(), &mut read_from, &mut self.cache);
-        // FIXME: write a custom executor that knows `fut` will return immediately?
-        futures::executor::block_on(fut)
+        crate::parse::xml::parse_map(path.as_ref(), &mut read_from, &mut self.cache)
+            .now_or_never()
+            .expect(
+                "synchronously loading a TMX map stayed pending; this is a bug, please report it",
+            )
     }
 
     /// Parses a file hopefully containing a Tiled tileset and tries to parse it. All external files
@@ -208,9 +212,11 @@ impl<Reader: ResourceReader, Cache: ResourceCache> Loader<Reader, Cache> {
     /// in this context it is not an intermediate object.
     pub fn load_tsx_tileset(&mut self, path: impl AsRef<Path>) -> Result<Tileset> {
         let mut read_from = SyncReadFrom(&mut self.reader);
-        let fut = crate::parse::xml::parse_tileset(path.as_ref(), &mut read_from, &mut self.cache);
-        // FIXME: write a custom executor that knows `fut` will return immediately?
-        futures::executor::block_on(fut)
+        crate::parse::xml::parse_tileset(path.as_ref(), &mut read_from, &mut self.cache)
+            .now_or_never()
+            .expect(
+                "synchronously loading a TSX tileset stayed pending; this is a bug, please report it",
+            )
     }
 }
 

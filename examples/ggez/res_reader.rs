@@ -1,3 +1,5 @@
+use std::io::BufReader;
+
 use ggez::*;
 
 /// A resource reader that uses assets from the ggez filesystem.
@@ -5,7 +7,7 @@ use ggez::*;
 pub struct GgezResourceReader<'ctx>(pub &'ctx mut ggez::filesystem::Filesystem);
 
 impl tiled::ResourceReader for GgezResourceReader<'_> {
-    type Resource = filesystem::File;
+    type Resource = BufReader<filesystem::File>;
 
     type Error = GameError;
 
@@ -13,6 +15,6 @@ impl tiled::ResourceReader for GgezResourceReader<'_> {
         &mut self,
         path: &std::path::Path,
     ) -> std::result::Result<Self::Resource, Self::Error> {
-        self.0.open(path)
+        Ok(BufReader::new(self.0.open(path)?))
     }
 }
