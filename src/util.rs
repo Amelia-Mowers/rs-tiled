@@ -182,60 +182,49 @@ pub(crate) use handle_attr_branches;
 /// Goes through the children of the tag and will call the correct function for
 /// that child. Closes the tag.
 macro_rules! parse_tag {
-    ($parser:expr, $close_tag:expr, {$($open_tag:expr => |$attrs:tt| $block:expr),* $(,)*}) => {
-        loop {
-            let next: quick_xml::events::Event = $parser.read_event().await.map_err(Error::XmlDecodingError)?;
-            match next {
-                #[allow(unused_variables)]
+    (@match_next $next:expr, $close_tag:expr, {$($open_tag:expr => $( for $attrs:ident )? $body:block),* $(,)*}) => {
+        match $next {
+            #[allow(unused_variables)]
+            quick_xml::events::Event::Start(start) | quick_xml::events::Event::Empty(start) => {
                 $(
-                    quick_xml::events::Event::Start(start) if start.local_name().into_inner() == $open_tag.as_bytes() => {
-                        use itertools::Itertools;
-                        let $attrs: std::vec::Vec<_> = start
-                            .attributes()
-                            .try_collect()
-                            .map_err(|err| $crate::Error::XmlDecodingError(err.into()))?;
-                        $block?
+                    if start.local_name().into_inner() == $open_tag.as_bytes() {
+                        $(
+                            let $attrs = start
+                                .attributes()
+                                .collect::<std::result::Result<std::vec::Vec<_>, _>>()
+                                .map_err(|err| $crate::Error::XmlDecodingError(err.into()))?;
+                        )?
+                        $body?
                     }
                 )*
+            }
 
-                quick_xml::events::Event::End(end) if end.local_name().into_inner() == $close_tag.as_bytes() => {
-                    break;
-                }
+            quick_xml::events::Event::End(end) if end.local_name().into_inner() == $close_tag.as_bytes() => {
+                break;
+            }
 
-                quick_xml::events::Event::Eof => {
-                    return Err(Error::PrematureEnd("Document ended before we expected.".to_string()));
-                }
+            quick_xml::events::Event::Eof => {
+                return Err(Error::PrematureEnd("Document ended before we expected.".to_string()));
+            }
 
-                _ => {}
+            _ => {}
+        }
+    };
+
+    ($parser:expr, $close_tag:expr, {$($open_tag:expr => $( for $attrs:ident )? $body:block),* $(,)*}) => {
+        if !$parser.last_event_was_empty {
+            loop {
+                let next: quick_xml::events::Event = $parser.read_event().await.map_err(Error::XmlDecodingError)?;
+                parse_tag!(@match_next next, $close_tag, { $($open_tag => $( for $attrs )? $body, )? })
             }
         }
     };
 
-    ($parser:expr => $buf:expr, $close_tag:expr, {$($open_tag:expr => |$attrs:tt| $block:expr),* $(,)*}) => {
-        loop {
-            let next: quick_xml::events::Event = $parser.reader.read_event_into($buf).await.map_err(Error::XmlDecodingError)?;
-            match next {
-                #[allow(unused_variables)]
-                $(
-                    quick_xml::events::Event::Start(start) if start.local_name().into_inner() == $open_tag.as_bytes() => {
-                        use itertools::Itertools;
-                        let $attrs: std::vec::Vec<_> = start
-                            .attributes()
-                            .try_collect()
-                            .map_err(|err| $crate::Error::XmlDecodingError(err.into()))?;
-                        $block?
-                    }
-                )*
-
-                quick_xml::events::Event::End(end) if end.local_name().into_inner() == $close_tag.as_bytes() => {
-                    break;
-                }
-
-                quick_xml::events::Event::Eof => {
-                    return Err(Error::PrematureEnd("Document ended before we expected.".to_string()));
-                }
-
-                _ => {}
+    ($parser:expr => $buf:expr, $close_tag:expr, {$($open_tag:expr => $( for $attrs:ident )? $body:block),* $(,)*}) => {
+        if !$parser.last_event_was_empty {
+            loop {
+                let next: quick_xml::events::Event = $parser.read_event_into($buf).await.map_err(Error::XmlDecodingError)?;
+                parse_tag!(@match_next next, $close_tag, { $($open_tag => $( for $attrs )? $body, )? })
             }
         }
     }

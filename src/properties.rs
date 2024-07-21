@@ -142,7 +142,7 @@ pub(crate) async fn parse_properties<R: Reader>(parser: &mut Parser<R>) -> Resul
     let mut p = HashMap::new();
     let mut buffer = Vec::new();
     parse_tag!(parser => &mut buffer, "properties", {
-        "property" => |attrs| {
+        "property" => for attrs {
             // add indirection because the returned async state machine is a recursive data structure
             // (`parse_properties_inner` calls `parse_properties` again)
             Box::pin(parse_properties_inner(parser, &mut p, attrs)).await
@@ -212,6 +212,10 @@ async fn parse_properties_inner<R: Reader>(
 /// Checks if there is a properties tag next in the parser. Will consume any whitespace or comments.
 async fn has_properties_tag_next<R: Reader>(parser: &mut Parser<R>) -> bool {
     // TODO: tests
+
+    if parser.last_event_was_empty {
+        return false;
+    }
 
     loop {
         let Ok(next) = parser.read_event().await else {

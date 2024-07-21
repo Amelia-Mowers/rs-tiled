@@ -168,7 +168,7 @@ impl Map {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "map", {
-            "tileset" => |attrs| {
+            "tileset" => for attrs {
                 let res = Tileset::parse_xml_in_map(parser, &attrs, map_path,  read_from, cache).await?;
                 match res.result_type {
                     EmbeddedParseResultType::ExternalReference { tileset_path } => {
@@ -180,15 +180,15 @@ impl Map {
                             tileset
                         };
 
-                        tilesets.push(MapTilesetGid{first_gid: res.first_gid, tileset});
+                        tilesets.push(MapTilesetGid { first_gid: res.first_gid, tileset } );
                     }
                     EmbeddedParseResultType::Embedded { tileset } => {
-                        tilesets.push(MapTilesetGid{first_gid: res.first_gid, tileset: Arc::new(tileset)});
+                        tilesets.push(MapTilesetGid { first_gid: res.first_gid, tileset: Arc::new(tileset) });
                     },
                 };
                 Ok(())
             },
-            "layer" => |attrs| {
+            "layer" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -202,7 +202,7 @@ impl Map {
                 ).await?);
                 Ok(())
             },
-            "imagelayer" => |attrs| {
+            "imagelayer" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -216,7 +216,7 @@ impl Map {
                 ).await?);
                 Ok(())
             },
-            "objectgroup" => |attrs| {
+            "objectgroup" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -230,7 +230,7 @@ impl Map {
                 ).await?);
                 Ok(())
             },
-            "group" => |attrs| {
+            "group" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -244,7 +244,7 @@ impl Map {
                 ).await?);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

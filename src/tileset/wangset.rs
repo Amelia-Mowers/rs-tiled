@@ -72,17 +72,17 @@ impl WangSet {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "wangset", {
-            "wangcolor" => |attrs| {
+            "wangcolor" => for attrs {
                 let color = WangColor::new(parser, attrs).await?;
                 wang_colors.push(color);
                 Ok(())
             },
-            "wangtile" => |attrs| {
+            "wangtile" => for attrs {
                 let (id, t) = WangTile::new(attrs)?;
                 wang_tiles.insert(id, t);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => for attrs {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

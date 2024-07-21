@@ -36,7 +36,7 @@ impl Frame {
 pub(crate) async fn parse_animation<R: Reader>(parser: &mut Parser<R>) -> Result<Vec<Frame>> {
     let mut animation = Vec::new();
     parse_tag!(parser, "animation", {
-        "frame" => |attrs| {
+        "frame" => for attrs {
             animation.push(Frame::new(attrs)?);
             Ok(())
         },

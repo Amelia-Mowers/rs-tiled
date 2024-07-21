@@ -40,7 +40,7 @@ impl ObjectLayerData {
         let mut properties = HashMap::new();
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "objectgroup", {
-            "object" => |attrs| {
+            "object" => for attrs {
                 objects.push(ObjectData::new(
                     parser,
                     attrs,
@@ -52,7 +52,7 @@ impl ObjectLayerData {
                 ).await?);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

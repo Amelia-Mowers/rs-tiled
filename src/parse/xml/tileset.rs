@@ -27,7 +27,9 @@ pub async fn parse_tileset(
             .await
             .map_err(Error::XmlDecodingError)?
         {
-            Event::Start(start) if start.local_name().into_inner() == b"tileset" => {
+            Event::Start(start) | Event::Empty(start)
+                if start.local_name().into_inner() == b"tileset" =>
+            {
                 let attributes: Vec<_> = start
                     .attributes()
                     .try_collect()

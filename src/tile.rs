@@ -85,15 +85,15 @@ impl TileData {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "tile", {
-            "image" => |attrs| {
+            "image" => for attrs {
                 image = Some(Image::new(parser, attrs, path_relative_to).await?);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },
-            "objectgroup" => |attrs| {
+            "objectgroup" => for attrs {
                 // Tile objects are not allowed within tile object groups, so we can pass None as the
                 // tilesets vector
                 objectgroup = Some(
@@ -102,7 +102,7 @@ impl TileData {
                 );
                 Ok(())
             },
-            "animation" => |_| {
+            "animation" => {
                 animation = Some(parse_animation(parser).await?);
                 Ok(())
             },

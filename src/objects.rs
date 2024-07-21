@@ -297,30 +297,30 @@ impl ObjectData {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "object", {
-            "ellipse" => |_| {
+            "ellipse" => {
                 shape = Some(ObjectShape::Ellipse {
                     width,
                     height,
                 });
                 Ok(())
             },
-            "polyline" => |attrs| {
+            "polyline" => for attrs {
                 shape = Some(ObjectData::new_polyline(attrs)?);
                 Ok(())
             },
-            "polygon" => |attrs| {
+            "polygon" => for attrs {
                 shape = Some(ObjectData::new_polygon(attrs)?);
                 Ok(())
             },
-            "point" => |_| {
+            "point" => {
                 shape = Some(ObjectShape::Point(x, y));
                 Ok(())
             },
-            "text" => |attrs| {
+            "text" => for attrs {
                 shape = Some(ObjectData::new_text(attrs, parser, width, height).await?);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

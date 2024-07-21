@@ -112,7 +112,7 @@ impl TileLayerData {
         let mut properties = HashMap::new();
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "layer", {
-            "data" => |attrs| {
+            "data" => for attrs {
                 if infinite {
                     result = Self::Infinite(InfiniteTileLayerData::new(parser, attrs, tilesets).await?);
                 } else {
@@ -120,7 +120,7 @@ impl TileLayerData {
                 }
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

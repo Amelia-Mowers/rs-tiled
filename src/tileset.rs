@@ -261,24 +261,24 @@ impl Tileset {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "tileset", {
-            "image" => |attrs| {
+            "image" => for attrs {
                 image = Some(Image::new(parser, attrs, &prop.root_path).await?);
                 Ok(())
             },
-            "tileoffset" => |attrs| {
+            "tileoffset" => for attrs {
                 offset = parse_tileoffset(attrs)?;
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },
-            "tile" => |attrs| {
+            "tile" => for attrs {
                 let (id, tile) = TileData::new(parser, attrs, &prop.root_path, read_from, cache).await?;
                 tiles.insert(id, tile);
                 Ok(())
             },
-            "wangset" => |attrs| {
+            "wangset" => for attrs {
                 let set = WangSet::new(parser, attrs).await?;
                 wang_sets.push(set);
                 Ok(())

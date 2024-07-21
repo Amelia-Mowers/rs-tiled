@@ -29,7 +29,7 @@ impl GroupLayerData {
         let mut layers = Vec::new();
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "group", {
-            "layer" => |attrs| {
+            "layer" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -43,7 +43,7 @@ impl GroupLayerData {
                 ).await?);
                 Ok(())
             },
-            "imagelayer" => |attrs| {
+            "imagelayer" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -57,7 +57,7 @@ impl GroupLayerData {
                 ).await?);
                 Ok(())
             },
-            "objectgroup" => |attrs| {
+            "objectgroup" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -71,7 +71,7 @@ impl GroupLayerData {
                 ).await?);
                 Ok(())
             },
-            "group" => |attrs| {
+            "group" => for attrs {
                 layers.push(LayerData::new(
                     parser,
                     attrs,
@@ -85,7 +85,7 @@ impl GroupLayerData {
                 ).await?);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

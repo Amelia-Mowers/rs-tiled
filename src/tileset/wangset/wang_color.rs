@@ -48,7 +48,7 @@ impl WangColor {
         // Gather variable data
         let mut properties = HashMap::new();
         parse_tag!(parser, "wangcolor", {
-            "properties" => |_| {
+            "properties" => for attrs {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

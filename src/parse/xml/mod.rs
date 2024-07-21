@@ -77,8 +77,9 @@ impl<R: AsyncResourceReader> ReadFrom for AsyncReadFrom<'_, R> {
 
 /// A [`Reader`]-buffer pair.
 pub(crate) struct Parser<R> {
-    pub(crate) reader: R,
+    reader: R,
     pub(crate) buffer: Vec<u8>,
+    pub(crate) last_event_was_empty: bool,
 }
 
 impl<R> Parser<R> {
@@ -87,12 +88,24 @@ impl<R> Parser<R> {
         Self {
             reader,
             buffer: Vec::new(),
+            last_event_was_empty: false,
         }
     }
 }
 
 impl<R: Reader> Parser<R> {
     pub(crate) async fn read_event(&mut self) -> ReadResult<Event> {
-        self.reader.read_event_into(&mut self.buffer).await
+        let event = self.reader.read_event_into(&mut self.buffer).await?;
+        self.last_event_was_empty = matches!(event, Event::Empty(_));
+        Ok(event)
+    }
+
+    pub(crate) async fn read_event_into<'a>(
+        &mut self,
+        buf: &'a mut Vec<u8>,
+    ) -> ReadResult<Event<'a>> {
+        let event = self.reader.read_event_into(buf).await?;
+        self.last_event_was_empty = matches!(event, Event::Empty(_));
+        Ok(event)
     }
 }

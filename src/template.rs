@@ -75,7 +75,7 @@ impl Template {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "template", {
-            "object" => |attrs| {
+            "object" => for attrs {
                 object = Some(ObjectData::new(
                     parser,
                     attrs,
@@ -87,7 +87,7 @@ impl Template {
                 ).await?);
                 Ok(())
             },
-            "tileset" => |attrs| {
+            "tileset" => for attrs {
                 let res = Tileset::parse_xml_in_map(parser, &attrs, template_path, read_from, cache).await?;
                 match res.result_type {
                     EmbeddedParseResultType::ExternalReference { tileset_path } => {

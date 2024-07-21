@@ -26,11 +26,11 @@ impl ImageLayerData {
 
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "imagelayer", {
-            "image" => |attrs| {
+            "image" => for attrs {
                 image = Some(Image::new(parser, attrs, path_relative_to).await?);
                 Ok(())
             },
-            "properties" => |_| {
+            "properties" => {
                 properties = parse_properties(parser).await?;
                 Ok(())
             },

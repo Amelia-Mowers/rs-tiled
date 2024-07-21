@@ -39,7 +39,7 @@ impl InfiniteTileLayerData {
         let mut chunks = HashMap::<(i32, i32), ChunkData>::new();
         let mut buffer = Vec::new();
         parse_tag!(parser => &mut buffer, "data", {
-            "chunk" => |attrs| {
+            "chunk" => for attrs {
                 let chunk = InternalChunk::new(parser, attrs, e, c, tilesets).await?;
                 for x in chunk.x..chunk.x + chunk.width as i32 {
                     for y in chunk.y..chunk.y + chunk.height as i32 {
