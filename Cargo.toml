@@ -11,10 +11,6 @@ authors = ["Matthew Hall <matthew@quickbeam.me.uk>"]
 edition = "2018"
 include = ["src/**/*.rs", "README.md", "LICENSE", "CHANGELOG.md"]
 
-[features]
-default = ["zstd"]
-wasm = ["zstd/wasm"]
-
 [lib]
 name = "tiled"
 path = "src/lib.rs"
