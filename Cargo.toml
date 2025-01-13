@@ -12,8 +12,8 @@ edition = "2018"
 include = ["src/**/*.rs", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [features]
-default = ["zstd"]
-wasm = ["zstd/wasm"]
+default = []
+wasm = []
 
 [lib]
 name = "tiled"
@@ -34,7 +34,6 @@ path = "examples/ggez/main.rs"
 [dependencies]
 base64 = "0.22.1"
 xml-rs = "0.8.4"
-zstd = { version = "0.13.1", optional = true, default-features = false }
 flate2 = "1.0.28"
 
 [dev-dependencies.sfml]

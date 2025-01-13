@@ -21,10 +21,6 @@ pub(crate) fn parse_data_line(
         (Some("base64"), Some("gzip")) => parse_base64(parser)
             .and_then(|data| process_decoder(Ok(flate2::bufread::GzDecoder::new(&data[..]))))
             .map(|v| convert_to_tiles(&v, tilesets)),
-        #[cfg(feature = "zstd")]
-        (Some("base64"), Some("zstd")) => parse_base64(parser)
-            .and_then(|data| process_decoder(zstd::stream::read::Decoder::with_buffer(&data[..])))
-            .map(|v| convert_to_tiles(&v, tilesets)),
 
         _ => Err(Error::InvalidEncodingFormat {
             encoding,
